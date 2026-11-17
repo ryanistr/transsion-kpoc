@@ -39,6 +39,7 @@ const DIGIT_SINGLE_X: usize = 495;
 const PCT_SINGLE_X: usize = 537;
 
 const LOGO_FULL: usize = 1; // 100% full screen
+#[allow(dead_code)]
 const LOGO_LOW: usize = 2; // low battery warning icon
 const LOGO_OVTEMP: usize = 3; // over temperature warning icon
 const LOGO_DIGIT0: usize = 4; // digits 0..9 (entries 4..=13)
@@ -56,7 +57,6 @@ const WELL_H: usize = 337;
 const WAVE_W: usize = 224;
 const WAVE_H: usize = 12;
 
-const LOW_BATT_PCT: i32 = 2;
 const OVERTEMP_DEG_C: i32 = 600;
 
 const POLL_MS: i32 = 500;
@@ -1146,9 +1146,6 @@ fn ui_mode(cap: i32, temp: i32, tab: &LogoTable) -> UiMode {
     if temp >= OVERTEMP_DEG_C && tab.have(LOGO_OVTEMP) {
         return UiMode::Static(LOGO_OVTEMP);
     }
-    if cap >= 0 && cap <= LOW_BATT_PCT && tab.have(LOGO_LOW) {
-        return UiMode::Static(LOGO_LOW);
-    }
     // a full battery is the full-green screen
     if cap >= 100 && tab.have(LOGO_FULL) {
         return UiMode::Static(LOGO_FULL);
@@ -1248,12 +1245,14 @@ fn draw_anim_normal(dst: &mut [u8], s: &Surf, tab: &LogoTable, frame: usize, cap
         .clamp(WELL_Y_TOP as i32, WELL_Y_BOT as i32) as usize;
 
     // 3. Fill solid green rows from fill_y down to the bottom of the well
-    for y in fill_y..=WELL_Y_BOT {
-        if y >= s.h || WELL_X + WELL_W > s.w {
-            break;
+    if cap > 0 {
+        for y in fill_y..=WELL_Y_BOT {
+            if y >= s.h || WELL_X + WELL_W > s.w {
+                break;
+            }
+            let d_off = y * s.row_bytes + WELL_X * 4;
+            scratch[d_off..d_off + WELL_W * 4].copy_from_slice(row);
         }
-        let d_off = y * s.row_bytes + WELL_X * 4;
-        scratch[d_off..d_off + WELL_W * 4].copy_from_slice(row);
     }
 
     // 4. Wave crest at surface: cycle entries 15..=24 (224x12) when cap <= 90
@@ -2419,24 +2418,13 @@ mod tests {
             ui_mode(55, OVERTEMP_DEG_C, &t),
             UiMode::Static(LOGO_OVTEMP)
         );
-        // low battery: 0 and the threshold are inclusive
-        assert_eq!(ui_mode(0, 300, &t), UiMode::Static(LOGO_LOW));
-        assert_eq!(
-            ui_mode(LOW_BATT_PCT, 300, &t),
-            UiMode::Static(LOGO_LOW)
-        );
-        // just above the threshold starts the animation
-        assert_eq!(
-            ui_mode(LOW_BATT_PCT + 1, 300, &t),
-            UiMode::Anim
-        );
+        // 0% to 99% animates
+        for cap in 0..=99 {
+            assert_eq!(ui_mode(cap, 300, &t), UiMode::Anim, "cap {}", cap);
+        }
         // 100% is the static full screen
         assert_eq!(ui_mode(100, 300, &t), UiMode::Static(LOGO_FULL));
         assert_eq!(ui_mode(101, 300, &t), UiMode::Static(LOGO_FULL));
-        // everything above the low-battery threshold up to 100 animates
-        for cap in (LOW_BATT_PCT + 1)..=99 {
-            assert_eq!(ui_mode(cap, 300, &t), UiMode::Anim, "cap {}", cap);
-        }
         // capacity still unknown: plain base frame, no digits
         assert_eq!(ui_mode(-1, 300, &t), UiMode::Static(LOGO_GREEN_BASE));
     }
@@ -2663,6 +2651,22 @@ mod tests {
         draw_ui(&mut dst99, &s, &t, UiMode::Anim, 0, 99);
         let p99 = px(&dst99, &s, WELL_X + WELL_W / 2, WELL_Y_TOP + 10);
         assert!(p99[1] > 150 && p99[2] < 100, "99% must be green near top, got {:?}", p99);
+
+        // at 0% '0%' is drawn centered
+        let mut dst0 = vec![0u8; s.row_bytes * s.h];
+        draw_ui(&mut dst0, &s, &t, UiMode::Anim, 0, 0);
+        let g0 = t.entries[LOGO_DIGIT0].as_ref().unwrap();
+        let g_pct = t.entries[LOGO_PCT].as_ref().unwrap();
+        for r in 0..DIGIT_H {
+            for c in 0..DIGIT_W {
+                let src = &g0[r * DIGIT_W * 4 + c * 4..r * DIGIT_W * 4 + c * 4 + 4];
+                assert_eq!(px(&dst0, &s, DIGIT_SINGLE_X + c, DIGIT_Y + r), <[u8; 4]>::try_from(src).unwrap());
+            }
+            for c in 0..PCT_W {
+                let src = &g_pct[r * PCT_W * 4 + c * 4..r * PCT_W * 4 + c * 4 + 4];
+                assert_eq!(px(&dst0, &s, PCT_SINGLE_X + c, DIGIT_Y + r), <[u8; 4]>::try_from(src).unwrap());
+            }
+        }
 
         // every pixel inside a digit box is the untouched glyph
         for (gx, gw, g) in glyphs {
