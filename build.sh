@@ -1,7 +1,11 @@
 #!/bin/sh
 set -e
 
-NDK="${ANDROID_NDK_ROOT:-/home/ryanistr/android-ndk-r27c}"
+NDK="${ANDROID_NDK_ROOT:-$NDK}"
+if [ -z "$NDK" ]; then
+    echo "Error: Set ANDROID_NDK_ROOT or NDK to your Android NDK path." >&2
+    exit 1
+fi
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 CC="$TOOLCHAIN/bin/aarch64-linux-android35-clang"
 STRIP="$TOOLCHAIN/bin/llvm-strip"

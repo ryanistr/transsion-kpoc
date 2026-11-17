@@ -81,7 +81,7 @@ fn key_poll_ms(held: bool) -> i32 {
 /// A kernel event timestamp more than this far behind the clock it belongs
 /// to is a replay of buffered history, not a live press. The threshold sits
 /// orders of magnitude above any plausible queue delay (bounded by POLL_MS
-/// plus one draw) and far below the 1909 s old replay observed on X6739, so
+/// plus one draw) and far below the 1909 s old replay observed on hardware, so
 /// a real press is never filtered out by it.
 const KEV_STALE_MS: i64 = 600_000;
 
@@ -163,7 +163,7 @@ fn ev_age_ms(ts: i64, now: (i64, i64)) -> Option<i64> {
 /// The MTK kernel keeps power-key history behind its pwrkey_sync handler
 /// and flushes it to a reader when a new press arrives, so a reader sees a
 /// burst of old press/release pairs stamped at the moment they were
-/// buffered. On X6739 one flush handed a reader four pairs 1909 s old, all
+/// buffered. On target hardware one flush handed a reader four pairs 1909 s old, all
 /// sharing a single timestamp, and `feed()` collapsed them into one panel
 /// toggle the user never asked for. Only a stamp that is impossibly old is
 /// dropped, so a real press survives every clock domain and every
@@ -1452,7 +1452,7 @@ fn parse_uevent(buf: &[u8]) -> Option<UevInfo> {
 /// which supplies may answer "is a cable connected"?
 ///
 /// The name list covers the conventional Android supplies. The type test
-/// covers the MTK reality on X6739, where the only supply that reports
+/// covers the MediaTek reality on target hardware, where the only supply that reports
 /// cable presence is named `charger` and typed USB_DCP, and no usb, ac or
 /// wireless supply exists at all. A name-only list therefore left `online`
 /// permanently None, which made the unplug power-off path unreachable:
@@ -2570,7 +2570,7 @@ mod tests {
         assert_eq!(t.count, 61);
     }
 
-    // the exact geometry the KMS path blits into, matching the X6739 panel
+    // the exact geometry the KMS path blits into, matching a 1080x2400 panel
     fn panel_surf() -> Surf {
         Surf {
             row_bytes: 1080 * 4,
@@ -2750,7 +2750,7 @@ mod tests {
         };
         let fb_bytes = 1080usize * 2400 * 4;
         let t = table_load_from(&[&path], fb_bytes).expect("table must load");
-        assert_eq!(t.count, 61, "Infinix table has 61 entries");
+        assert_eq!(t.count, 61, "logo table has 61 entries");
 
         // Selective loading: full frames
         for i in [LOGO_LOW, LOGO_OVTEMP, LOGO_FULL, LOGO_GREEN_BASE] {
@@ -3105,7 +3105,7 @@ mod tests {
         kb
     }
 
-    /// the exact shape observed on X6739: realtime clock now, and a flush
+    /// the exact shape observed on device: realtime clock now, and a flush
     /// of four press/release pairs all stamped 1909 s ago
     const PROBE_NOW: (i64, i64) = (1_794_504_283_108, 3_063_697);
     const PROBE_STALE: i64 = 1_794_502_374_068; // 1909 s behind PROBE_NOW.0
@@ -3354,7 +3354,7 @@ mod tests {
 
     // ---- online_source: which supplies may answer "is a cable in?" -----
     //
-    // Ground truth captured from X6739 by forcing a synthetic uevent on
+    // Ground truth captured on device by forcing a synthetic uevent on
     // every supply under /sys/class/power_supply. The supplies are
     // battery, charger, mtk-gauge, mtk-master-charger, mtk-mst-div-chg,
     // mtk-slave-charger, mtk-slv-div-chg, mtk_charger_type, tran-auto-test
@@ -3414,7 +3414,7 @@ mod tests {
 
     #[test]
     fn the_devices_actual_supply_set_yields_exactly_one_online_source() {
-        // every supply X6739 registers, with the type and the online value
+        // every supply the target device registers, with the type and the online value
         // each reports while a cable is plugged in and charging
         let supplies = [
             ("battery", "Battery"),
@@ -3444,7 +3444,7 @@ mod tests {
     fn the_devices_charger_uevent_sets_online_and_charging() {
         // the exact payload captured from
         // /devices/platform/soc/11f00000.i2c/i2c-5/5-0034/mt6360_chg.2.auto/
-        // power_supply/charger on X6739, with the header line the kernel
+        // power_supply/charger on device, with the header line the kernel
         // prepends left in place
         let raw: &[u8] = b"change@/devices/platform/soc/11f00000.i2c/i2c-5/5-0034/mt6360_chg.2.auto/power_supply/charger\0ACTION=change\0POWER_SUPPLY_NAME=charger\0POWER_SUPPLY_TYPE=USB_DCP\0POWER_SUPPLY_ONLINE=1\0POWER_SUPPLY_STATUS=Full\0POWER_SUPPLY_CURRENT_MAX=0\0";
         let info = parse_uevent(raw).expect("charger uevent must parse");
