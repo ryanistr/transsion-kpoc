@@ -1,0 +1,8 @@
+# Build artifacts
+/kpoc_charger
+/kpoc_test
+test_kpoc
+*.o
+
+# Test assets
+*.img
